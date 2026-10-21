@@ -81,39 +81,3 @@ production ones:
 | Cost per answered question | over target 3 days running | Cost review; cache and model-tier audit | Platform engineer |
 | Safety-sensitive answer disputed by a farmer | any | Agronomist review within 24 h; kill switch if it repeats | Agronomy lead |
 
-## 4 · Automated guardrail — `ci/check_principles.py`
-
-*Designed, not yet built.* The script reads `architecture.yaml` on every PR and fails
-the build when:
-
-- **P1** — an advice-giving service skips retrieval or the grounding check.
-- **P2** — an advice-giving service has no escalation path; or anything other than
-  the Ingestion Pipeline writes to a knowledge store; or a write is not marked
-  agronomist-approved.
-- **P3** — a flow crossing the trust boundary carries no PII declaration
-  (`none` / `redacted` / `dpa`); or unredacted data is sent to tracing.
-- **P4** — a service calls a billable vendor but emits no traces or cost.
-- **P5** — a flow to a vendor does not name the adapter it passes through.
-
-The current design passes. A "quick FAQ bot" that calls the LLM directly, and ships
-raw transcripts to Langfuse, does not:
-
-```text
-FAIL P1 Grounded or silent:      faq_bot gives advice without retrieval or a grounding check
-FAIL P2 Agronomist in the loop:  faq_bot gives advice with no escalation path
-FAIL P2 Agronomist in the loop:  chat_gateway -> pinecone ("upsert farmer answers")
-                                 writes knowledge without agronomist approval
-FAIL P3 Farmer data protected:   voice_service -> langfuse ("raw transcript") crosses
-                                 the trust boundary with no PII declaration
-FAIL P4 Measured:                faq_bot calls a billable vendor but emits no traces or cost
-FAIL P5 Vendors behind adapters: faq_bot -> azure_openai bypasses the LLMClient adapter
-
-BLOCKED: 6 violation(s) of principles P1–P5  -> exit 1, merge blocked
-```
-
-**What this does not catch.** It checks the *declared* architecture, not the running
-code. `architecture.yaml` can be perfectly compliant while a service quietly calls
-Azure OpenAI directly. It catches design drift, not implementation drift. The next
-step is a trace-based check over Langfuse spans — assert that every answer span is
-preceded by a retrieval span and a grounding-check span — which closes the gap for P1
-and P4 using evidence from production rather than from a file in the repo.
